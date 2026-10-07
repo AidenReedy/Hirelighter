@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hirelighter</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='3' width='20' height='26' rx='3' fill='%232a78d6'/%3E%3Cpath d='M10 10h12M10 15h12M10 20h8' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Hirelighter</h1>
+    <nav class="tabs">
+      <a href="#builder" data-tab="builder">Builder</a>
+      <a href="#content" data-tab="content">Content</a>
+      <a href="#jobs" data-tab="jobs">Jobs</a>
+    </nav>
+    <div class="spacer"></div>
+    <a class="btn ghost small" href="/api/backup" title="Download the database and every resume you've sent">Backup</a>
+  </header>
+
+  <main>
+    <section id="tab-setup" hidden></section>
+    <section id="tab-builder" hidden></section>
+    <section id="tab-content" hidden></section>
+    <section id="tab-jobs" hidden></section>
+  </main>
+
+  <dialog id="dialog"></dialog>
+
+  <script src="/static/vendor/Sortable.min.js"></script>
+  <script src="/static/vendor/pdf.min.js"></script>
+  <script src="/static/vendor/jszip.min.js"></script>
+  <script src="/static/vendor/docx-preview.min.js"></script>
+  <script src="/static/vendor/d3.min.js"></script>
+  <script src="/static/vendor/d3-sankey.min.js"></script>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

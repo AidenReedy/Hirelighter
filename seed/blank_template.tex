@@ -1,0 +1,190 @@
+%-------------------------
+% BLANK TEMPLATE
+% Fill this in, then upload it on the app's setup screen (or Content > Import).
+%  - Replace the placeholder text. Copy or delete entries and \resumeItem lines as needed.
+%  - Keep the macros (\resumeSubheading, \resumeItem, ...) so the app can read them.
+%  - One line per bullet: start with a verb, include a number.
+%  - Use -- for date ranges. Escape special characters: \& \% \$ \# \_
+% You can also upload any resume already written in Jake's Resume template.
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-6pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[label=$\bullet$]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+\begin{document}
+
+%----------HEADING----------
+% Name, then contact items separated by $|$. Use \href{link}{\underline{shown text}} for links.
+\begin{center}
+    \textbf{\Huge \scshape Your Name} \\ \vspace{1pt}
+    \small 555-555-5555 $|$ \href{mailto:you@example.com}{\underline{you@example.com}} $|$
+    \href{https://linkedin.com/in/your-profile}{\underline{linkedin.com/in/your-profile}} $|$
+    \href{https://github.com/your-username}{\underline{github.com/your-username}}
+\end{center}
+
+%-----------EXPERIENCE-----------
+% \resumeSubheading{Role title}{Dates}{Company}{Location}
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Job Title}{Month Year -- Present}
+      {Company Name}{City, ST}
+      \resumeItemListStart
+        \resumeItem{Did something measurable, e.g. reduced X by 30\% by doing Y}
+        \resumeItem{Built or improved something, and say who used it or what changed}
+        \resumeItem{Led or owned something, with a number for scale}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Previous Job Title}{Month Year -- Month Year}
+      {Previous Company}{City, ST}
+      \resumeItemListStart
+        \resumeItem{Accomplishment with a result}
+        \resumeItem{Another accomplishment with a result}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------EDUCATION-----------
+% \resumeSubheading{School}{Location}{Degree}{Dates}
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {University Name}{City, ST}
+      {Bachelor of Science in Your Major}{Month Year -- Month Year}
+  \resumeSubHeadingListEnd
+
+%-----------CERTIFICATIONS-----------
+% One block per certification: \textbf{Name} & Date
+\section{Certifications}
+  \resumeSubHeadingListStart
+    \vspace{-2pt}\item
+      \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+        \textbf{Certification Name} & Month Year \\
+      \end{tabular*}\vspace{-7pt}
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+% \resumeProjectHeading{\textbf{Project Name} $|$ \emph{Tools, Languages}}{Dates}
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Project Name} $|$ \emph{Tool, Language, Framework}}{Month Year -- Present}
+          \resumeItemListStart
+            \resumeItem{What you built and why}
+            \resumeItem{A result, number, or something you learned}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Another Project} $|$ \emph{Tool, Language}}{Month Year}
+          \resumeItemListStart
+            \resumeItem{What you built and why}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------LEADERSHIP-----------
+% Same format as projects: \textbf{Organization, Role} $|$ \emph{Tags}
+\section{Leadership \& Activities}
+  \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Organization Name, Your Role} $|$ \emph{Topic, Topic}}{Year -- Year}
+          \resumeItemListStart
+            \resumeItem{What you did and the impact}
+          \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------TECHNICAL SKILLS-----------
+% \textbf{Group}{: item, item, item}  separated by \quad $|$ \quad  (add or remove groups)
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Language, Language, Language} \quad $|$ \quad \textbf{Tools}{: Tool, Tool, Tool, Tool}
+    }}
+ \end{itemize}
+
+%-------------------------------------------
+\end{document}

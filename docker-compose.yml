@@ -1,0 +1,42 @@
+# Hirelighter: pulls the published image. To build from source instead, see docker-compose.dev.yml.
+services:
+  hirelighter:
+    image: ${IMAGE:-ghcr.io/aidenreedy/hirelighter:latest}
+    container_name: hirelighter
+    restart: unless-stopped
+    ports:
+      # Bind to the machine's Tailscale (or LAN) IP only, never 0.0.0.0. Set BIND_IP in .env.
+      - "${BIND_IP:?Set BIND_IP in .env (e.g. your Tailscale 100.x.y.z address)}:${PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-UTC}                    # for dates the server fills in, e.g. America/Los_Angeles
+      MAX_BULLET_CHARS: ${MAX_BULLET_CHARS:-107}
+      APP_USER: ${APP_USER:-admin}
+      APP_PASSWORD: ${APP_PASSWORD:-}   # optional basic auth; empty = off
+    volumes:
+      - hirelighter-data:/data          # database + copies of every resume you've sent
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m                  # LaTeX builds happen here
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  # Optional auto-update: `docker compose --profile autoupdate up -d`
+  # Checks GHCR every 6 hours and restarts Hirelighter when a new image is published.
+  # Note: Watchtower needs the Docker socket, which is root-equivalent on this host.
+  watchtower:
+    image: containrrr/watchtower:latest
+    profiles: [autoupdate]
+    restart: unless-stopped
+    command: --label-enable --cleanup --interval 21600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  hirelighter-data:

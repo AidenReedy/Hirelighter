@@ -1,0 +1,191 @@
+%-------------------------
+% Resume in Latex (Jake's Resume template) filled with the fictional sample in seed/sample.json
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
+
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-6pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[label=$\bullet$]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge \scshape Alex Rivera} \\ \vspace{1pt}
+    \small 555-010-0199 $|$ \href{mailto:alex.rivera@example.com}{\underline{alex.rivera@example.com}} $|$
+    \href{https://linkedin.com/in/example}{\underline{linkedin.com/in/example}} $|$
+    \href{https://github.com/example}{\underline{github.com/example}}
+\end{center}
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Security Engineering Intern}{Jun. 2025 -- Sep. 2025}
+      {Northwind Health}{Portland, OR}
+      \resumeItemListStart
+        \resumeItem{Automated weekly vulnerability scans with Python and Nessus, cutting manual triage time by 60\%}
+        \resumeItem{Wrote detection rules in Splunk for 12 MITRE ATT\&CK techniques seen in recent incidents}
+        \resumeItem{Documented an incident response playbook adopted by a 6-person security team}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {IT Support Technician}{Sep. 2023 -- May 2025}
+      {State University IT Services}{Corvallis, OR}
+      \resumeItemListStart
+        \resumeItem{Resolved 1,200+ tickets for students and staff, keeping a 95\% satisfaction score}
+        \resumeItem{Imaged and hardened 150+ lab workstations using a standard Windows baseline}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {State University}{Corvallis, OR}
+      {Bachelor of Science in Computer Science}{Sep. 2022 -- Jun. 2026}
+  \resumeSubHeadingListEnd
+
+%-----------CERTS-----------
+\section{Certifications}
+  \resumeSubHeadingListStart
+    \vspace{-2pt}\item
+      \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+        \textbf{CompTIA Security+} & Jan. 2026 \\
+      \end{tabular*}\vspace{-7pt}
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Home Lab SOC} $|$ \emph{Proxmox, Docker, Wazuh, Linux}}{2025 -- Present}
+          \resumeItemListStart
+            \resumeItem{Deployed Wazuh and Suricata on Proxmox to monitor 10 virtual machines and home network traffic}
+            \resumeItem{Wrote 8 custom detection rules and tested them against simulated attacks with Atomic Red Team}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Password Strength API} $|$ \emph{Python, Flask, PostgreSQL}}{Mar. 2025}
+          \resumeItemListStart
+            \resumeItem{Built a REST API that scores passwords against breach lists and entropy rules}
+            \resumeItem{Added rate limiting and input validation after an OWASP Top 10 self-review}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+\section{Leadership \& Activities}
+\resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Cybersecurity Club, Vice President} $|$ \emph{CTFs, Workshops}}{2024 -- 2026}
+          \resumeItemListStart
+            \resumeItem{Organized weekly CTF practice nights and 4 beginner workshops for 40+ members}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------PROGRAMMING SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Python, Bash, SQL, JavaScript} \quad $|$ \quad \textbf{Tools}{: Splunk, Wazuh, Nessus, Wireshark, Docker, Proxmox, Linux}
+    }}
+ \end{itemize}
+
+%-------------------------------------------
+\end{document}
