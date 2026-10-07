@@ -1,6 +1,6 @@
 // Content tab: create, edit, reorder, archive and delete everything in the bank.
 import { store, refresh, presetsUsing } from "./app.js";
-import { el, POST, PUT, DEL, fail, toast, counter, updateCounter, promptDialog, confirmDialog, openDialog } from "./util.js";
+import { el, POST, PUT, DEL, fail, toast, promptDialog, confirmDialog, openDialog } from "./util.js";
 import { importDialog } from "./setup.js";
 
 let root;
@@ -190,9 +190,7 @@ function renderBullets(e) {
 }
 
 function renderBullet(e, b) {
-  const cc = counter(b.text);
   const ta = el("textarea", { rows: 2, value: b.text });
-  ta.addEventListener("input", () => updateCounter(cc, ta.value));
   ta.addEventListener("change", () => {
     const v = ta.value.replace(/\s+/g, " ").trim();
     if (!v) { ta.value = b.text; return toast("Bullet text can't be empty", "error"); }
@@ -211,7 +209,6 @@ function renderBullet(e, b) {
     el("span.drag", { title: "Drag to reorder" }, "⋮⋮"),
     el("div", ta, el("div.meta", note, move)),
     el("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" } },
-      cc,
       el("button.btn.ghost.small", { type: "button", title: b.archived ? "Show in the builder again" : "Hide from the builder but keep it here",
         on: { click: () => run(async () => { await PUT(`/api/bullets/${b.id}`, { archived: !b.archived }); await reload(); }, b.archived ? "Restored" : "Archived") } },
         b.archived ? "Restore" : "Archive"),

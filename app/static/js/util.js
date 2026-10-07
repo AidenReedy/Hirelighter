@@ -70,19 +70,6 @@ export function visibleLen(s) {
 export let MAX_CHARS = 107;
 export const setMaxChars = (n) => { if (n > 0) MAX_CHARS = n; };
 
-/** Hidden normally; shows a "too long" tag once a bullet passes MAX_CHARS (so it won't fit on one line). */
-export function counter(text) {
-  const node = el("span.cc", { title: `Over ${MAX_CHARS} characters: it won't fit on one line` }, "too long");
-  updateCounter(node, text);
-  return node;
-}
-
-export function updateCounter(node, text) {
-  const over = visibleLen(text) > MAX_CHARS;
-  node.classList.toggle("over", over);
-  node.hidden = !over;
-}
-
 /**
  * Open the shared <dialog>. `build(form, close)` fills it; resolves with whatever close(value) gets.
  * Esc / backdrop resolve null.

@@ -1,7 +1,7 @@
 // Builder tab: choose and order content per resume preset, live preview, download.
 import { store, refresh, find, onBankChange } from "./app.js";
 import {
-  el, POST, PUT, DEL, fail, toast, counter, updateCounter, visibleLen, MAX_CHARS,
+  el, POST, PUT, DEL, fail, toast, visibleLen, MAX_CHARS,
   promptDialog, confirmDialog, debounce, saveBlob, lsGet, lsSet,
 } from "./util.js";
 import { openJobDialog } from "./jobs.js";
@@ -10,7 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdf.worker.min.js";
 
 let root, treeEl, hintsEl, previewEl, pagePill, presetSel, dirtyEl, formatSel;
 let presetId = null;   // saved preset being edited (null = unsaved)
-let work = null;       // working tree: [{id, on, entries:[{id,on,bullets:[{id,on}]}], skills:Set}]
+let work = null;       // working tree: [{id, on, entries:[{id,on,bullets:[{id,on}]}], skills:Set, skillOrder:Map<groupId, skillId[]>}]
 let skillsLayout = "inline";
 let format = "pdf";
 let dirty = false;
@@ -45,6 +45,7 @@ function buildWork(config) {
         .map(({ item: b, on: bon }) => ({ id: b.id, on: bon })),
     })),
     skills: new Set(cfg?.skills || []),
+    skillOrder: new Map((s.groups || []).map((g) => [g.id, ordered(g.skills, cfg?.skills, (x) => x).map(({ item }) => item.id)])),
   }));
 }
 
@@ -56,7 +57,7 @@ function toConfig() {
       return {
         id: s.id,
         entries: s.entries.filter((e) => e.on).map((e) => ({ id: e.id, bullets: e.bullets.filter((b) => b.on).map((b) => b.id) })),
-        skills: sec.kind === "skills" ? sec.groups.flatMap((g) => g.skills.map((k) => k.id)).filter((k) => s.skills.has(k)) : [],
+        skills: sec.kind === "skills" ? sec.groups.flatMap((g) => s.skillOrder.get(g.id) || []).filter((k) => s.skills.has(k)) : [],
       };
     }),
   };
@@ -116,8 +117,9 @@ function renderSection(s) {
   if (sec.kind === "skills") {
     for (const g of sec.groups) {
       body.append(el("div.group-label", g.name));
-      body.append(el("div.chips", g.skills.map((k) => {
-        const chip = el("span.chip", { class: s.skills.has(k.id) ? "on" : "off" }, k.name);
+      const byId = new Map(g.skills.map((k) => [k.id, k]));
+      const chips = el("div.chips", (s.skillOrder.get(g.id) || []).map((id) => byId.get(id)).filter(Boolean).map((k) => {
+        const chip = el("span.chip", { dataset: { id: k.id }, class: s.skills.has(k.id) ? "on" : "off", title: "Click to toggle, drag to reorder" }, k.name);
         chip.addEventListener("click", () => {
           s.skills.has(k.id) ? s.skills.delete(k.id) : s.skills.add(k.id);
           chip.className = "chip " + (s.skills.has(k.id) ? "on" : "off");
@@ -125,7 +127,16 @@ function renderSection(s) {
           changed();
         });
         return chip;
-      })));
+      }));
+      body.append(chips);
+      Sortable.create(chips, {
+        animation: 150,
+        onEnd: (ev) => {
+          if (ev.oldIndex === ev.newIndex) return;
+          s.skillOrder.set(g.id, [...chips.children].map((n) => Number(n.dataset.id)));
+          changed();
+        },
+      });
     }
     if (!sec.groups.length) body.append(el("div.muted.small", { style: { paddingLeft: "22px" } }, "No skills yet. Add some in Content."));
     body.append(el("div.row.small", { style: { padding: "2px 0 0 22px" } },
@@ -175,17 +186,14 @@ function renderEntry(e, updateCount) {
 
 function renderBullet(e, b) {
   const bank = find.bullet(b.id);
-  const cc = counter(bank.text);
   const text = el("div.btext", { contenteditable: "plaintext-only", spellcheck: "true" }, bank.text);
   if (text.contentEditable !== "plaintext-only") text.contentEditable = "true";
-  text.addEventListener("input", () => updateCounter(cc, text.textContent));
   text.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); text.blur(); } });
   text.addEventListener("blur", () => saveBulletText(bank, text.textContent.replace(/\s+/g, " ").trim()));
   const node = el("li.bul", { dataset: { id: b.id }, class: b.on ? "" : "off" },
     el("span.drag", "⋮⋮"),
     check(b.on, (v) => { b.on = v; node.classList.toggle("off", !v); changed(); }),
-    el("div", { style: { flex: "1", minWidth: "0" } }, text, bank.note ? el("span.todo", bank.note) : null),
-    cc);
+    el("div", { style: { flex: "1", minWidth: "0" } }, text, bank.note ? el("span.todo", bank.note) : null));
   return node;
 }
 

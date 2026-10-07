@@ -146,17 +146,16 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .bul .btext { flex: 1; min-width: 0; padding: 1px 4px; border-radius: 4px; outline: none; }
 .bul.off .btext { color: var(--muted); }
 .bul input[type=checkbox], .ent-head input[type=checkbox], .sec-head input[type=checkbox] { margin-top: 3px; flex: none; }
-.cc { font-size: 11px; flex: none; padding: 1px 6px; font-weight: 700; white-space: nowrap; }
-.cc.over { background: var(--hot-pink); color: var(--on-neon); border-radius: 4px; }
 .todo { font-size: 11px; font-weight: 600; color: var(--on-neon); background: var(--orange); padding: 0 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
 .add-row { padding: 2px 0 0 22px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 6px 22px; }
 .chip {
-  border: var(--line); border-radius: 999px; padding: 0 10px; cursor: pointer; background: var(--card);
+  border: var(--line); border-radius: 999px; padding: 0 10px; cursor: grab; background: var(--card);
   font-size: 13px; font-weight: 600; user-select: none;
 }
 .chip.on { background: var(--cyan); color: var(--on-neon); }
 .chip.off { color: var(--muted); border-style: dashed; text-decoration: line-through; }
+.chip.sortable-ghost { opacity: .4; }
 .group-label { font-size: 12px; font-weight: 700; color: var(--text-2); padding: 4px 0 0 22px; }
 
 .preview-pane { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
