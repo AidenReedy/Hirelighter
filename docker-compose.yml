@@ -5,8 +5,9 @@ services:
     container_name: hirelighter
     restart: unless-stopped
     ports:
-      # Bind to the machine's Tailscale (or LAN) IP only, never 0.0.0.0. Set BIND_IP in .env.
-      - "${BIND_IP:?Set BIND_IP in .env (e.g. your Tailscale 100.x.y.z address)}:${PORT:-8080}:8080"
+      # Listens on all of this machine's IPs (LAN, Tailscale, ...) by default.
+      # To restrict it to one address, set BIND_IP in .env (e.g. 127.0.0.1 or a Tailscale 100.x IP).
+      - "${BIND_IP:-0.0.0.0}:${PORT:-8080}:8080"
     environment:
       TZ: ${TZ:-UTC}                    # for dates the server fills in, e.g. America/Los_Angeles
       MAX_BULLET_CHARS: ${MAX_BULLET_CHARS:-107}

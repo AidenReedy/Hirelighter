@@ -16,11 +16,11 @@ A self-hosted resume builder and job tracker with a highlighter-and-marker look.
 You need Docker. Make a folder with these two files from this repo: [`docker-compose.yml`](docker-compose.yml) and [`.env.example`](.env.example) (renamed to `.env`).
 
 ```bash
-cp .env.example .env        # set BIND_IP (see below)
+cp .env.example .env        # set APP_PASSWORD and TZ (see below)
 docker compose up -d
 ```
 
-Open `http://<BIND_IP>:8080` and follow the setup screen:
+Open `http://<this machine's IP>:8080` (LAN or Tailscale) and follow the setup screen:
 
 1. **Download the blank template** and fill it in (any text editor, or Overleaf).
 2. **Upload it.** You'll see what was found before anything is saved.
@@ -32,11 +32,11 @@ The image (`ghcr.io/aidenreedy/hirelighter`) runs on x86-64 and ARM64 (Raspberry
 
 | Variable | Default | What it does |
 |---|---|---|
-| `BIND_IP` | required | IP the app listens on. Use a private address: your Tailscale IP (`tailscale ip -4`), a LAN IP, or `127.0.0.1` for this computer only. |
-| `PORT` | `8080` | Port on that IP. |
+| `BIND_IP` | all IPs | Leave blank to listen on every IP the machine has (LAN and Tailscale). Set one address to restrict it, e.g. `127.0.0.1` (this computer only) or your Tailscale IP. |
+| `PORT` | `8080` | Port to listen on. |
 | `TZ` | `UTC` | Timezone for dates the server fills in, e.g. `America/New_York`. |
 | `MAX_BULLET_CHARS` | `107` | Bullets longer than this get a "too long" tag. 107 fits one line in the default template. |
-| `APP_USER` / `APP_PASSWORD` | `admin` / empty | Optional HTTP basic auth. Empty password = off. |
+| `APP_USER` / `APP_PASSWORD` | `admin` / empty | Login prompt for the whole app (HTTP basic auth). **Recommended.** Empty password = off. |
 
 ### Updating
 
@@ -65,6 +65,7 @@ docker compose cp app.db hirelighter:/data/app.db && docker compose restart
 Hirelighter has no user accounts and is meant for **one person on a private network**.
 
 - Don't expose it to the internet: no port forwarding, no public reverse proxy. Reach it over a VPN like Tailscale.
+- It listens on all of the machine's IPs by default, so anything that can reach the machine can reach the app. Set `APP_PASSWORD`, or set `BIND_IP` to limit it to one address.
 - If you also host public services, keep them on a separate machine or VLAN that can't reach this one.
 - The container is read-only, runs as a non-root user with all capabilities dropped, and is limited to 512 MB and 1 CPU. LaTeX runs with `-no-shell-escape` and a 20 s timeout, and all text is escaped before it reaches LaTeX.
 
