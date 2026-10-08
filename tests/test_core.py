@@ -1,3 +1,4 @@
+import importlib
 import io
 import re
 from pathlib import Path
@@ -231,3 +232,18 @@ def test_selftest_leaves_data_dir_alone(tmp_path, monkeypatch):
     db.close()
     selftest.main()
     assert not real.exists()
+
+
+def test_healthz_skips_login(tmp_path, monkeypatch):
+    """Docker's health check can't log in, so /healthz must answer even with APP_PASSWORD set."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("APP_PASSWORD", "secret")
+    from app import db
+    db.close()
+    importlib.reload(db)
+    import app as app_pkg
+    importlib.reload(app_pkg)
+    c = app_pkg.create_app().test_client()
+    assert c.get("/healthz").status_code == 200
+    assert c.get("/api/state").status_code == 401
+    db.close()

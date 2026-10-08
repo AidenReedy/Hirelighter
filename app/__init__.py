@@ -25,6 +25,8 @@ def create_app():
     if password:
         @app.before_request
         def basic_auth():
+            if request.path == "/healthz":  # Docker's health check; returns nothing private
+                return None
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Basic "):
                 try:
