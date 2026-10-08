@@ -1,4 +1,5 @@
 """SQLite storage. One file in DATA_DIR; schema versioned with PRAGMA user_version."""
+import fcntl
 import json
 import os
 import sqlite3
@@ -100,6 +101,35 @@ SCHEMA = [
         at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     """,
+    # v2: Gmail rejection tracking (app/mailwatch.py)
+    """
+    CREATE TABLE mail_messages (
+        id INTEGER PRIMARY KEY,
+        message_id TEXT NOT NULL UNIQUE,          -- RFC 5322 Message-ID, so nothing is processed twice
+        received_at TEXT NOT NULL,
+        from_name TEXT NOT NULL DEFAULT '',
+        from_addr TEXT NOT NULL DEFAULT '',
+        subject TEXT NOT NULL DEFAULT '',
+        snippet TEXT NOT NULL DEFAULT '',         -- short plain-text excerpt; full emails are never stored
+        category TEXT NOT NULL,                   -- rejection | ack | other
+        confidence TEXT NOT NULL DEFAULT '',      -- high | medium
+        reason TEXT NOT NULL DEFAULT '',          -- the phrase that decided the category
+        job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+        candidates TEXT NOT NULL DEFAULT '[]',    -- JSON job ids, best match first
+        outcome TEXT NOT NULL,                    -- auto | review | accepted | dismissed | ignored | linked | undone
+        from_status TEXT,
+        to_status TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT
+    );
+    CREATE TABLE mail_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT ''
+    );
+    ALTER TABLE jobs ADD COLUMN expect_from TEXT NOT NULL DEFAULT '';   -- "Name <addr>" from the application-received email
+    ALTER TABLE job_events ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';   -- manual | email
+    ALTER TABLE job_events ADD COLUMN mail_id INTEGER REFERENCES mail_messages(id) ON DELETE SET NULL;
+    """,
 ]
 
 
@@ -124,11 +154,14 @@ def close():
 
 def migrate():
     conn = connect()
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-    for i, script in enumerate(SCHEMA[version:], start=version + 1):
-        conn.executescript(script)
-        conn.execute(f"PRAGMA user_version = {i}")
-    conn.commit()
+    # gunicorn workers start together; the lock keeps two of them from running the same upgrade
+    with open(DATA_DIR / ".migrate.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        for i, script in enumerate(SCHEMA[version:], start=version + 1):
+            conn.executescript(script)
+            conn.execute(f"PRAGMA user_version = {i}")
+        conn.commit()
     SENT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -146,6 +179,10 @@ def execute(sql, args=()):
     cur = conn.execute(sql, args)
     conn.commit()
     return cur
+
+
+def schema_current() -> bool:
+    return connect().execute("PRAGMA user_version").fetchone()[0] >= len(SCHEMA)
 
 
 def next_sort(table, where="1=1", args=()):
@@ -213,3 +250,35 @@ def prune_configs():
             new_secs.append(s)
         cfg["sections"] = new_secs
         execute("UPDATE resumes SET config = ? WHERE id = ?", (json.dumps(cfg), r["id"]))
+
+
+# ---------- jobs ----------
+
+def job_event(job_id, kind, a, b, source="manual", mail_id=None):
+    execute("INSERT INTO job_events (job_id, kind, from_value, to_value, source, mail_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (job_id, kind, None if a is None else str(a), None if b is None else str(b), source, mail_id))
+
+
+def set_job_status(job_id, status, source="manual", mail_id=None):
+    """Change a job's status and log it. Returns the previous status (None if the job is gone)."""
+    cur = row("SELECT status FROM jobs WHERE id = ?", (job_id,))
+    if not cur:
+        return None
+    if cur["status"] != status:
+        execute("UPDATE jobs SET status = ?, updated_at = datetime('now') WHERE id = ?", (status, job_id))
+        job_event(job_id, "status", cur["status"], status, source, mail_id)
+    return cur["status"]
+
+
+# ---------- mail watcher state ----------
+
+def mail_state():
+    return {r["key"]: r["value"] for r in rows("SELECT key, value FROM mail_state")}
+
+
+def set_mail_state(**kv):
+    conn = connect()
+    for k, v in kv.items():
+        conn.execute("INSERT INTO mail_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (k, "" if v is None else str(v)))
+    conn.commit()

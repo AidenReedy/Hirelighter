@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 from flask import Blueprint, Response, abort, jsonify, request, send_file
 
-from . import db, sankey, seed
+from . import db, mailmatch, sankey, seed
 from .import_tex import TexImportError
 from .render_docx import render_docx
 from .render_latex import LatexError, compile_pdf, page_count, render_tex
@@ -386,12 +386,8 @@ def render():
 
 # ---------- jobs ----------
 
-JOB_FIELDS = ["company", "role", "url", "status", "applied_date", "interview_count", "notes", "resume_id", "resume_name"]
-
-
-def _event(job_id, kind, a, b):
-    db.execute("INSERT INTO job_events (job_id, kind, from_value, to_value) VALUES (?, ?, ?, ?)",
-               (job_id, kind, None if a is None else str(a), None if b is None else str(b)))
+JOB_FIELDS = ["company", "role", "url", "status", "applied_date", "interview_count", "notes", "resume_id", "resume_name",
+              "expect_from"]
 
 
 def _normalize_job(d, current=None):
@@ -438,7 +434,7 @@ def add_job():
         fname = f"{jid}-{uuid.uuid4().hex[:8]}{ext}"
         upload.save(db.SENT_DIR / fname)
         db.execute("UPDATE jobs SET resume_file = ? WHERE id = ?", (fname, jid))
-    _event(jid, "created", None, d["status"])
+    db.job_event(jid, "created", None, d["status"])
     return jsonify(db.row("SELECT * FROM jobs WHERE id = ?", (jid,))), 201
 
 
@@ -451,9 +447,9 @@ def put_job(jid):
         update_row("jobs", jid, vals, list(vals))
         db.execute("UPDATE jobs SET updated_at = datetime('now') WHERE id = ?", (jid,))
     if "status" in vals and vals["status"] != cur["status"]:
-        _event(jid, "status", cur["status"], vals["status"])
+        db.job_event(jid, "status", cur["status"], vals["status"])
     if "interview_count" in vals and vals["interview_count"] != cur["interview_count"]:
-        _event(jid, "interviews", cur["interview_count"], vals["interview_count"])
+        db.job_event(jid, "interviews", cur["interview_count"], vals["interview_count"])
     return jsonify(db.row("SELECT * FROM jobs WHERE id = ?", (jid,)))
 
 
@@ -485,6 +481,84 @@ def job_resume(jid):
 @bp.get("/sankey")
 def get_sankey():
     return jsonify(sankey.build(db.rows("SELECT status, interview_count FROM jobs")))
+
+
+# ---------- email (Gmail watcher results; the watcher itself runs in app/mailwatch.py) ----------
+
+MAIL_COLS = """m.id, m.received_at, m.from_name, m.from_addr, m.subject, m.snippet, m.category, m.confidence, m.reason,
+               m.job_id, m.candidates, m.outcome, m.from_status, m.to_status, m.resolved_at,
+               j.company, j.role, j.status AS job_status"""
+
+
+def _mail(mid):
+    return db.row(f"SELECT {MAIL_COLS} FROM mail_messages m LEFT JOIN jobs j ON j.id = m.job_id WHERE m.id = ?",
+                  (mid,)) or abort(404)
+
+
+def _mail_out(r):
+    r["candidates"] = json.loads(r["candidates"] or "[]")
+    return r
+
+
+@bp.get("/mail")
+def get_mail():
+    st = db.mail_state()
+    review = db.rows(f"""SELECT {MAIL_COLS} FROM mail_messages m LEFT JOIN jobs j ON j.id = m.job_id
+                         WHERE m.outcome = 'review' ORDER BY m.received_at DESC""")
+    recent = db.rows(f"""SELECT {MAIL_COLS} FROM mail_messages m LEFT JOIN jobs j ON j.id = m.job_id
+                         WHERE m.outcome IN ('auto', 'accepted') AND m.resolved_at >= datetime('now', '-14 days')
+                         ORDER BY m.resolved_at DESC, m.id DESC""")
+    return jsonify(
+        enabled=bool(st.get("account") or st.get("last_error")),
+        account=st.get("account", ""), label=st.get("label", ""), auto_apply=st.get("auto_apply") == "1",
+        interval=int(st.get("interval") or 0), last_check_at=st.get("last_check_at", ""),
+        last_error=st.get("last_error", ""), check_requested=st.get("check_requested") == "1",
+        login_on=bool(os.environ.get("APP_PASSWORD")),
+        review=[_mail_out(r) for r in review], recent=[_mail_out(r) for r in recent],
+    )
+
+
+@bp.post("/mail/check")
+def mail_check():
+    db.set_mail_state(check_requested=1)
+    return jsonify(ok=True)
+
+
+@bp.post("/mail/<int:mid>/accept")
+def mail_accept(mid):
+    m = _mail(mid)
+    if m["outcome"] != "review":
+        abort(409, "already handled")
+    d = body()
+    job = db.row("SELECT * FROM jobs WHERE id = ?", (d.get("job_id") or m["job_id"],)) or abort(400, "pick a job")
+    status = d.get("status") or mailmatch.rejection_status(job)
+    if status not in db.STATUSES:
+        abort(400, "bad status")
+    db.set_job_status(job["id"], status, source="email", mail_id=mid)
+    db.execute("""UPDATE mail_messages SET outcome = 'accepted', job_id = ?, from_status = ?, to_status = ?,
+                  resolved_at = datetime('now') WHERE id = ?""", (job["id"], job["status"], status, mid))
+    return jsonify(_mail_out(_mail(mid)))
+
+
+@bp.post("/mail/<int:mid>/dismiss")
+def mail_dismiss(mid):
+    m = _mail(mid)
+    if m["outcome"] != "review":
+        abort(409, "already handled")
+    db.execute("UPDATE mail_messages SET outcome = 'dismissed', resolved_at = datetime('now') WHERE id = ?", (mid,))
+    return jsonify(ok=True)
+
+
+@bp.post("/mail/<int:mid>/undo")
+def mail_undo(mid):
+    m = _mail(mid)
+    if m["outcome"] not in ("auto", "accepted") or not m["job_id"]:
+        abort(409, "nothing to undo")
+    if m["job_status"] != m["to_status"]:
+        abort(409, "the status has changed since, so it was left alone")
+    db.set_job_status(m["job_id"], m["from_status"], source="manual", mail_id=mid)
+    db.execute("UPDATE mail_messages SET outcome = 'undone', resolved_at = datetime('now') WHERE id = ?", (mid,))
+    return jsonify(ok=True)
 
 
 # ---------- backup ----------

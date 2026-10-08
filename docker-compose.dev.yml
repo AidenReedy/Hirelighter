@@ -4,3 +4,6 @@ services:
   hirelighter:
     build: .
     image: hirelighter:dev
+  hirelighter-mail:
+    build: .
+    image: hirelighter:dev

@@ -28,6 +28,37 @@ services:
     labels:
       - com.centurylinklabs.watchtower.enable=true
 
+  # Optional Gmail rejection tracking: `docker compose --profile mail up -d` (setup in the README).
+  # Only this service gets the Gmail app password; the web app never sees it.
+  hirelighter-mail:
+    image: ${IMAGE:-ghcr.io/aidenreedy/hirelighter:latest}
+    container_name: hirelighter-mail
+    profiles: [mail]
+    restart: unless-stopped
+    command: ["python", "-m", "app.mailwatch"]
+    depends_on: [hirelighter]
+    environment:
+      TZ: ${TZ:-UTC}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      GMAIL_LABEL: ${GMAIL_LABEL:-Jobs}           # only this label is read
+      MAIL_CHECK_MINUTES: ${MAIL_CHECK_MINUTES:-15}
+      MAIL_AUTO_APPLY: ${MAIL_AUTO_APPLY:-1}      # 0 = every match waits for you in the Jobs tab
+    volumes:
+      - hirelighter-data:/data
+    healthcheck:
+      disable: true                             # the image's check is for the web server
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 32
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
   # Optional auto-update: `docker compose --profile autoupdate up -d`
   # Checks GHCR every 6 hours and restarts Hirelighter when a new image is published.
   # Note: Watchtower needs the Docker socket, which is root-equivalent on this host.
