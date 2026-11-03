@@ -25,6 +25,16 @@ def main():
             sys.exit(1)
         extra = f", {r.headers['X-Page-Count']} page(s)" if fmt == "pdf" else ""
         print(f"selftest: {fmt} ok ({len(r.data)} bytes{extra})")
+    client.post("/api/letter-blocks/starter")
+    blocks = client.get("/api/state").get_json()["letter_blocks"]
+    letter = {"company": "Example & Co", "role": "Analyst", "keywords": ["incident response"], "why": "Test.",
+              "blocks": [{"id": blocks[0]["id"]}, {"id": "why"}, *[{"id": b["id"]} for b in blocks[1:]]]}
+    for fmt in ("pdf", "docx"):
+        r = client.post("/api/render-letter", json={"config": letter, "format": fmt})
+        if r.status_code != 200:
+            print(f"selftest: cover letter {fmt} render failed: {r.get_json()}", file=sys.stderr)
+            sys.exit(1)
+        print(f"selftest: cover letter {fmt} ok ({len(r.data)} bytes)")
     db.close()
 
 

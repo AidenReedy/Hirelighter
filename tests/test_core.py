@@ -85,7 +85,6 @@ def render_general(c, fmt="tex"):
 def test_new_install_is_empty(empty_client):
     st = empty_client.get("/api/state").get_json()
     assert st["empty"] is True and st["bank"]["sections"] == [] and st["resumes"] == []
-    assert st["settings"]["max_bullet_chars"] == 107
     t = empty_client.get("/api/template")
     assert t.status_code == 200 and b"Your Name" in t.data
 
@@ -163,7 +162,7 @@ def test_docx_renders(client):
     from docx import Document
     st = client.get("/api/state").get_json()
     r = client.post("/api/render", json={"config": st["resumes"][0]["config"], "format": "docx", "name": "SOC"})
-    assert r.status_code == 200 and r.headers["X-Filename"] == "Alex_Rivera.docx"
+    assert r.status_code == 200 and r.headers["X-Filename"] == "AlexRivera.docx"
     text = "\n".join(p.text for p in Document(io.BytesIO(r.data)).paragraphs)
     assert "Automated weekly vulnerability scans" in text and "Leadership & Activities" in text
 
@@ -212,7 +211,7 @@ def test_jobs_flow(client):
     assert [e["to_value"] for e in ev if e["kind"] == "status"] == ["interviewing", "offered", "accepted"]
     # saved-but-not-applied job, with a resume attached
     data = {"job": '{"company": "Beta", "role": "GRC", "applied": false}',
-            "resume": (io.BytesIO(b"%PDF-1.4 test"), "Alex_Rivera.pdf")}
+            "resume": (io.BytesIO(b"%PDF-1.4 test"), "AlexRivera.pdf")}
     b = client.post("/api/jobs", data=data, content_type="multipart/form-data").get_json()
     assert b["status"] == "not_applied" and b["resume_file"].endswith(".pdf")
     assert client.get(f"/api/jobs/{b['id']}/resume").data == b"%PDF-1.4 test"
@@ -247,3 +246,119 @@ def test_healthz_skips_login(tmp_path, monkeypatch):
     assert c.get("/healthz").status_code == 200
     assert c.get("/api/state").status_code == 401
     db.close()
+
+
+# ---------- cover letters ----------
+
+def test_keywords_aliases_and_case():
+    from app import keywords as k
+    v = k.vocabulary(["Splunk", "Tines"])
+    found = k.find("Requirements\nIncident handling, governance, risk, and compliance, SOC 2, Splunk\nit matters", v)
+    assert {"incident response", "GRC", "SOC 2", "Splunk"} <= set(found)
+    assert "SOC" not in found            # "SOC 2" is the longer match
+    assert "IT" not in k.TERMS and not k.find("it is what it is", v)
+    assert k.match_tags("IR, grc, Tines", v) == {"incident response", "GRC", "Tines"}
+
+
+def test_keywords_analyze_marks_have_and_suggestions():
+    from app import keywords as k
+    blocks = [{"id": 1, "archived": False, "tags": "IR"}, {"id": 2, "archived": False, "tags": "pentest"}]
+    out = k.analyze("Need IR and GRC", ["Splunk"], "Led incident response", blocks)
+    have = {t["term"]: t["have"] for t in out["terms"]}
+    assert have == {"incident response": True, "GRC": False}
+    assert out["marks"] == [[5, 7, "incident response"], [12, 15, "GRC"]]
+    assert out["suggested_blocks"] == [1]
+
+
+def test_letter_placeholders_and_paragraphs():
+    from datetime import date
+    from app.resolve_letter import phrase, resolve_letter
+    assert phrase(["a"]) == "a" and phrase(["a", "b"]) == "a and b" and phrase(["a", "b", "c"]) == "a, b, and c"
+    blocks = [{"id": 1, "archived": False, "text": "At {company} as {role}: {keywords}.\n\nThen {keyword1} and {keyword3}."},
+              {"id": 2, "archived": True, "text": "hidden"}]
+    cfg = {"company": "AT&T", "role": "SOC Analyst", "keywords": ["incident response", "GRC"], "why": "I like {company}.",
+           "blocks": [{"id": "why"}, {"id": 1}, {"id": 2}, {"id": 99}]}
+    doc, unfilled = resolve_letter({"name": "Alex Rivera", "links": []}, blocks, cfg, date(2026, 11, 2))
+    assert doc["paragraphs"] == ["I like AT&T.", "At AT&T as SOC Analyst: incident response and GRC.",
+                                 "Then incident response and {keyword3}."]
+    assert unfilled == ["{keyword3}"]
+    assert doc["greeting"] == "Dear AT&T Hiring Team," and doc["date"] == "November 2, 2026"
+    cfg["blocks"] = [{"id": 1, "fill": False, "text": "At {company}, I wrote my own {keyword1}."}]
+    doc, unfilled = resolve_letter({"name": "A", "links": []}, blocks, cfg)
+    assert doc["paragraphs"] == ["At AT&T, I wrote my own {keyword1}."] and unfilled == ["{keyword1}"]
+    doc, _ = resolve_letter({"name": "A", "links": []}, blocks, {"blocks": [{"id": 1, "text": "Edited for {company}"}]})
+    assert doc["greeting"] == "Dear Hiring Team," and doc["paragraphs"] == ["Edited for {company}"]
+
+
+def _letter_config(client):
+    client.post("/api/letter-blocks/starter")
+    st = client.get("/api/state").get_json()
+    ids = [b["id"] for b in st["letter_blocks"]]
+    return {"company": "AT&T 100% #1", "role": "SOC Analyst", "keywords": ["incident response"],
+            "why": "Your **SOC** team's work on $ecurity & {role} hiring caught my eye.",
+            "blocks": [{"id": ids[0]}, {"id": "why"}, {"id": ids[1], "text": "I triaged 40 alerts a day."}, {"id": ids[2]}]}
+
+
+def test_letter_bank_and_saved_letters(client):
+    assert client.post("/api/letter-blocks/starter").status_code == 201
+    assert client.post("/api/letter-blocks/starter").status_code == 409
+    st = client.get("/api/state").get_json()
+    blocks = st["letter_blocks"]
+    assert [b["label"] for b in blocks] == ["Opener", "Experience", "Closing"]
+    bid = client.post("/api/letter-blocks", json={"label": "Project", "text": "x", "tags": "IR"}).get_json()["id"]
+    assert client.put(f"/api/letter-blocks/{bid}", json={"archived": True}).status_code == 200
+    lid = client.post("/api/letters", json={"name": "Acme", "config": {"blocks": [{"id": bid}, {"id": "why"}]}}).get_json()["id"]
+    assert client.post("/api/letters", json={"name": "acme"}).status_code == 409
+    assert client.delete(f"/api/letter-blocks/{bid}").status_code == 200
+    letter = client.get("/api/state").get_json()["letters"][0]
+    assert letter["id"] == lid and letter["config"]["blocks"] == [{"id": "why"}]
+    client.post("/api/letter-blocks/reorder", json={"ids": [blocks[2]["id"], blocks[0]["id"], blocks[1]["id"]]})
+    assert [b["label"] for b in client.get("/api/state").get_json()["letter_blocks"]] == ["Closing", "Opener", "Experience"]
+    kw = client.post("/api/letters/keywords", json={"posting": "Must know incident response and Wireshark"}).get_json()
+    assert "incident response" in [t["term"] for t in kw["terms"]]
+
+
+def test_letter_renders_docx_and_tex(client):
+    from docx import Document
+    cfg = _letter_config(client)
+    r = client.post("/api/render-letter", json={"config": cfg, "format": "docx"})
+    assert r.status_code == 200 and r.headers["X-Filename"] == "AlexRiveraCoverLetter.docx"
+    text = "\n".join(p.text for p in Document(io.BytesIO(r.data)).paragraphs)
+    assert "Dear AT&T 100% #1 Hiring Team," in text and "I triaged 40 alerts a day." in text
+    assert "SOC Analyst position at AT&T" in text and "Sincerely," in text
+    r = client.post("/api/render-letter", json={"config": cfg, "format": "tex"})
+    assert r.headers["X-Filename"] == "AlexRiveraCoverLetter.tex"
+    assert r"AT\&T 100\% \#1" in r.text and r"\textbf{SOC}" in r.text and r"\$ecurity" in r.text
+    assert r.headers["X-Unfilled"] == ""
+
+
+@pytest.mark.skipif(not find_pdflatex(), reason="pdflatex not installed")
+def test_letter_pdf_compiles_one_page(client):
+    r = client.post("/api/render-letter", json={"config": _letter_config(client), "format": "pdf"})
+    assert r.status_code == 200, r.get_json()
+    assert r.headers["X-Filename"] == "AlexRiveraCoverLetter.pdf" and r.headers["X-Page-Count"] == "1"
+
+
+def test_job_cover_letter_link_and_toggle(client):
+    j = client.post("/api/jobs", json={"company": "Acme", "applied": True}).get_json()
+    assert j["cover_letter"] == 0
+    data = {"letter": (io.BytesIO(b"%PDF letter"), "AlexRiveraCoverLetter.pdf"), "letter_name": "Acme SOC"}
+    j = client.post(f"/api/jobs/{j['id']}/letter", data=data, content_type="multipart/form-data").get_json()
+    assert j["cover_letter"] == 1 and j["letter_name"] == "Acme SOC" and j["letter_file"].endswith(".pdf")
+    r = client.get(f"/api/jobs/{j['id']}/letter?dl=1")
+    assert r.data == b"%PDF letter" and "AlexRiveraCoverLetter.pdf" in r.headers["Content-Disposition"]
+    first = j["letter_file"]
+    data = {"letter": (io.BytesIO(b"docx bytes"), "AlexRiveraCoverLetter.docx")}
+    j = client.post(f"/api/jobs/{j['id']}/letter", data=data, content_type="multipart/form-data").get_json()
+    from app import db
+    assert not (db.SENT_DIR / first).exists() and j["letter_file"].endswith(".docx")
+    assert client.put(f"/api/jobs/{j['id']}", json={"cover_letter": False}).get_json()["cover_letter"] == 0
+    assert client.put(f"/api/jobs/{j['id']}", json={"cover_letter": True}).get_json()["cover_letter"] == 1
+    client.delete(f"/api/jobs/{j['id']}")
+    assert not (db.SENT_DIR / j["letter_file"]).exists()
+
+
+def test_resume_filename_is_first_last(client):
+    st = client.get("/api/state").get_json()
+    r = client.post("/api/render", json={"config": st["resumes"][0]["config"], "format": "tex"})
+    assert r.headers["X-Filename"] == "AlexRivera.tex"

@@ -51,6 +51,10 @@ def render_tex(doc: dict) -> str:
     return _env.get_template("resume.tex.j2").render(**doc)
 
 
+def render_letter_tex(doc: dict) -> str:
+    return _env.get_template("letter.tex.j2").render(**doc)
+
+
 def find_pdflatex():
     exe = os.environ.get("PDFLATEX") or shutil.which("pdflatex")
     if exe:

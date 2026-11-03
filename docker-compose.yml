@@ -10,7 +10,6 @@ services:
       - "${BIND_IP:-0.0.0.0}:${PORT:-8080}:8080"
     environment:
       TZ: ${TZ:-UTC}                    # for dates the server fills in, e.g. America/Los_Angeles
-      MAX_BULLET_CHARS: ${MAX_BULLET_CHARS:-107}
       APP_USER: ${APP_USER:-admin}
       APP_PASSWORD: ${APP_PASSWORD:-}   # optional basic auth; empty = off
     volumes:

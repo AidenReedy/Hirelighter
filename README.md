@@ -5,8 +5,9 @@
 A self-hosted resume builder and job tracker with a highlighter-and-marker look.
 
 - **One bank of everything.** Jobs, projects, bullets and skills live in one place. Add a bullet once and every resume can use it.
-- **Tailored versions in a few clicks.** Check, uncheck and drag bullets per resume ("SOC", "Pentest", "Company X") with a live preview, then download a PDF (default), Word file, or the LaTeX source. Downloads are named `First_Last.pdf`.
+- **Tailored versions in a few clicks.** Check, uncheck and drag bullets per resume ("SOC", "Pentest", "Company X") with a live preview, then download a PDF (default), Word file, or the LaTeX source. Downloads are named `FirstLast.pdf`.
 - **Pixel-faithful PDFs.** Built with `pdflatex` from [Jake's Resume](https://github.com/jakegut/resume) template, the same one many people use on Overleaf.
+- **Cover letters.** Keep a bank of reusable paragraphs with `{company}`, `{role}` and `{keyword1}` placeholders. Paste a posting and Hirelighter highlights the keywords you have (and the ones you don't), fills the placeholders, and suggests paragraphs you've tagged. Write a fresh "why this company" part, then download `FirstLastCoverLetter.pdf` (or Word or LaTeX) and tick which applications it went with.
 - **Job tracker.** After a download you can log the application (or skip). Track status and interview counts, keep the exact file you sent, and see your search as a Sankey diagram.
 - **Rejections from Gmail (optional).** Reads one Gmail label and marks jobs rejected when the email is clear, with Undo. Anything unclear waits for you to review.
 - **Easy setup.** Download the blank template, fill it in, upload it. Or upload a resume you already have in Jake's format.
@@ -36,7 +37,6 @@ The image (`ghcr.io/aidenreedy/hirelighter`) runs on x86-64 and ARM64 (Raspberry
 | `BIND_IP` | all IPs | Leave blank to listen on every IP the machine has (LAN and Tailscale). Set one address to restrict it, e.g. `127.0.0.1` (this computer only) or your Tailscale IP. |
 | `PORT` | `8080` | Port to listen on. |
 | `TZ` | `UTC` | Timezone for dates the server fills in, e.g. `America/New_York`. |
-| `MAX_BULLET_CHARS` | `107` | Bullets longer than this are flagged in the Builder's hints. 107 fits one line in the default template. |
 | `APP_USER` / `APP_PASSWORD` | `admin` / empty | Login prompt for the whole app (HTTP basic auth). **Recommended.** Empty password = off. |
 
 ### Updating
@@ -60,6 +60,18 @@ Click **Backup** in the top bar. You get a zip with `app.db` (everything) and `s
 ```bash
 docker compose cp app.db hirelighter:/data/app.db && docker compose restart
 ```
+
+## Cover letters
+
+The **Cover Letter** tab works like the **Resume** tab, for letters:
+
+1. Enter the company and role, and paste the job posting. Matches are highlighted: green if the term is somewhere in your skills, bullets or paragraphs, pink if it isn't.
+2. Pick keywords for the placeholders (`{keyword1}`, `{keyword2}`, … and `{keywords}` as a phrase, e.g. "incident response, Splunk, and Python"). Only terms you already have are offered, so a letter never claims something your resume doesn't back up. You can still type one in.
+3. Write the **Why this company** part. It's blank on purpose; the letter warns you if you forget it.
+4. Check, uncheck and drag paragraphs. Click one to change it for this letter only, then **Save to bank** if you want to keep the new wording. Paragraphs tagged with keywords the posting mentions are marked "fits posting".
+5. Download. Pick the application(s) it went with in Jobs; each gets a tick in the **Cover letter** column and a copy of the exact file. You can also tick the box by hand for letters written elsewhere.
+
+**New letter** keeps your paragraph picks and clears the job details, so the next application starts where the last one left off. Keyword matching is a plain list of terms and aliases (IR → incident response, GRC, NIST CSF → NIST, …) in [`app/keywords.py`](app/keywords.py), plus every skill in your bank. Nothing leaves your machine.
 
 ## Gmail rejection tracking (optional)
 

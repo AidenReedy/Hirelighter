@@ -30,9 +30,9 @@ const today = () => {
  * Add/edit a job. With `blob`, the downloaded resume is attached to the job.
  * Resolves with the saved job, or null if skipped.
  */
-export async function openJobDialog({ job = null, blob = null, filename = "", resumeId = null, resumeName = "", fromDownload = false } = {}) {
+export async function openJobDialog({ job = null, blob = null, filename = "", resumeId = null, resumeName = "", fromDownload = false, prefill = {} } = {}) {
   const editing = !!job;
-  const j = job || { company: "", role: "", url: "", status: "applied", applied_date: today(), interview_count: 0, notes: "" };
+  const j = job || { company: "", role: "", url: "", status: "applied", applied_date: today(), interview_count: 0, notes: "", ...prefill };
   const values = await openDialog((form, close) => {
     const company = el("input", { type: "text", required: true, value: j.company, placeholder: "Company name" });
     const role = el("input", { type: "text", value: j.role, placeholder: "Role title" });
@@ -133,8 +133,13 @@ async function showHistory(job) {
     el("div.actions", el("button.btn", { type: "submit", on: { click: () => close(null) } }, "Close"))));
 }
 
+async function setCoverLetter(job, on, box) {
+  try { await PUT(`/api/jobs/${job.id}`, { cover_letter: on }); job.cover_letter = on ? 1 : 0; }
+  catch (e) { fail(e); box.checked = !on; }
+}
+
 async function remove(job) {
-  if (!(await confirmDialog(`Delete ${job.company}?`, "This removes the job, its history, and the saved resume copy."))) return;
+  if (!(await confirmDialog(`Delete ${job.company}?`, "This removes the job, its history, and the saved resume and cover letter copies."))) return;
   try { await DEL(`/api/jobs/${job.id}`); await load(); } catch (e) { fail(e); }
 }
 
@@ -149,7 +154,7 @@ const ago = (sqlTime) => {
   return `${Math.round(mins / 1440)} days ago`;
 };
 const day = (sqlTime) => new Date(sqlTime.replace(" ", "T") + "Z").toLocaleDateString();
-const jobLabel = (j) => (j.role ? `${j.company} · ${j.role}` : j.company);
+export const jobLabel = (j) => (j.role ? `${j.company} · ${j.role}` : j.company);
 
 async function mailAction(url, body, msg) {
   try { await POST(url, body); if (msg) toast(msg); await load(); } catch (e) { fail(e); }
@@ -248,7 +253,7 @@ function renderTable() {
     return;
   }
   tableWrap.replaceChildren(el("table.jobs-table",
-    el("thead", el("tr", ["Company / role", "Status", "Interviews", "Applied", "Resume sent", "Notes", ""].map((h) => el("th", h)))),
+    el("thead", el("tr", ["Company / role", "Status", "Interviews", "Applied", "Resume sent", "Cover letter", "Notes", ""].map((h) => el("th", h)))),
     el("tbody", rows.map((j) => {
       const sel = el("select.status-sel", { class: `st-${j.status}`, "aria-label": "Status" },
         Object.entries(STATUS_LABELS).map(([k, l]) => el("option", { value: k, selected: k === j.status }, l)));
@@ -265,12 +270,21 @@ function renderTable() {
         el("td.small", j.resume_file
           ? el("a", { href: `/api/jobs/${j.id}/resume`, target: "_blank", rel: "noopener" }, j.resume_name || "View")
           : el("span.muted", j.resume_name || "—")),
+        el("td.small", letterCell(j)),
         el("td.notes", { title: j.notes }, j.notes),
         el("td", el("div.row", { style: { flexWrap: "nowrap", gap: "2px" } },
           el("button.icon-btn", { type: "button", title: "Edit", on: { click: () => openJobDialog({ job: j }) } }, "✎"),
           el("button.icon-btn", { type: "button", title: "History", on: { click: () => showHistory(j) } }, "⟲"),
           el("button.icon-btn.danger", { type: "button", title: "Delete", on: { click: () => remove(j) } }, "✕"))));
     }))));
+}
+
+function letterCell(j) {
+  const box = el("input", { type: "checkbox", checked: !!j.cover_letter, "aria-label": `Cover letter sent to ${j.company}` });
+  box.addEventListener("change", () => setCoverLetter(j, box.checked, box));
+  return el("span.letter-cell",
+    el("label.check", { title: "Tick if you sent a cover letter with this application" }, box),
+    j.letter_file ? el("a", { href: `/api/jobs/${j.id}/letter`, target: "_blank", rel: "noopener", title: "Open the letter you sent" }, j.letter_name || "View") : null);
 }
 
 function stat(v, l) { return el("div.card.stat", el("div.v", v), el("div.l", l)); }

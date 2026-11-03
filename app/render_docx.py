@@ -84,19 +84,21 @@ def _two_col(doc, left, right, size=10, bold=False, italic=False, indent=0.15):
     return p
 
 
-def render_docx(doc: dict) -> bytes:
+def _new_document(margin_in: float, size: int = 10) -> Document:
     d = Document()
     sec = d.sections[0]
     sec.page_width, sec.page_height = Inches(8.5), Inches(11)
-    sec.left_margin = sec.right_margin = Inches(0.5)
-    sec.top_margin = sec.bottom_margin = Inches(0.5)
-
+    sec.left_margin = sec.right_margin = Inches(margin_in)
+    sec.top_margin = sec.bottom_margin = Inches(margin_in)
     normal = d.styles["Normal"]
     normal.font.name = FONT
-    normal.font.size = Pt(10)
+    normal.font.size = Pt(size)
     normal.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
+    return d
 
-    prof = doc["profile"]
+
+def _heading(d, prof):
+    """Name and contact line, centered; shared by the resume and the cover letter."""
     p = _fmt(d.add_paragraph(), 0, 2)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _run(p, prof["name"], size=24, bold=True, small_caps=True)
@@ -110,6 +112,12 @@ def render_docx(doc: dict) -> bytes:
             _hyperlink(p, l["url"], l["text"])
         else:
             _run(p, l["text"])
+    return p
+
+
+def render_docx(doc: dict) -> bytes:
+    d = _new_document(0.5)
+    _heading(d, doc["profile"])
 
     for s in doc["sections"]:
         h = _fmt(d.add_paragraph(), 6, 3)
@@ -151,6 +159,30 @@ def render_docx(doc: dict) -> bytes:
                 p.paragraph_format.left_indent = Inches(0.45)
                 p.paragraph_format.first_line_indent = Inches(-0.17)
                 _rich(p, b)
+
+    buf = BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def render_letter_docx(doc: dict) -> bytes:
+    """Cover letter in Word, matching letter.tex.j2: same heading, 0.75in margins, 11pt body."""
+    d = _new_document(0.75, size=11)
+    _heading(d, doc["profile"]).paragraph_format.space_after = Pt(18)
+
+    def para(text, after=10):
+        p = _fmt(d.add_paragraph(), 0, after, 1.0)
+        _rich(p, text, size=11)
+        return p
+
+    para(doc["date"])
+    if doc["company"]:
+        para(doc["company"])
+    para(doc["greeting"])
+    for t in doc["paragraphs"]:
+        para(t)
+    para(doc["closing"], after=28)
+    para(doc["name"], after=0)
 
     buf = BytesIO()
     d.save(buf)

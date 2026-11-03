@@ -209,7 +209,7 @@ function renderBullet(e, b) {
     el("span.drag", { title: "Drag to reorder" }, "⋮⋮"),
     el("div", ta, el("div.meta", note, move)),
     el("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" } },
-      el("button.btn.ghost.small", { type: "button", title: b.archived ? "Show in the builder again" : "Hide from the builder but keep it here",
+      el("button.btn.ghost.small", { type: "button", title: b.archived ? "Show in the Resume tab again" : "Hide from the Resume tab but keep it here",
         on: { click: () => run(async () => { await PUT(`/api/bullets/${b.id}`, { archived: !b.archived }); await reload(); }, b.archived ? "Restored" : "Archived") } },
         b.archived ? "Restore" : "Archive"),
       el("button.btn.ghost.small.danger", { type: "button", on: { click: async () => {
@@ -232,7 +232,7 @@ function renderSkills(sec) {
     }),
   });
   wrap.append(
-    el("div.muted.small", "Only list tools your bullets back up. Pick which skills show on each resume in the Builder."),
+    el("div.muted.small", "Only list tools your bullets back up. Pick which skills show on each resume in the Resume tab."),
     groups,
     el("button.btn.small", { type: "button", on: { click: () => run(async () => {
       const name = await promptDialog("New skill group", "Group name (e.g. Frameworks, Cloud)", "", "Add");
@@ -291,6 +291,68 @@ function renderGroup(g) {
     chips, el("div", { style: { marginTop: "4px" } }, add));
 }
 
+// ---------- cover letter paragraphs ----------
+
+function lettersUsing(id) {
+  return store.letters.filter((l) => (l.config.blocks || []).some((b) => b.id === id)).map((l) => l.name);
+}
+
+function renderLetterBlocks() {
+  const all = store.letterBlocks;
+  const visible = all.filter((b) => showArchived || !b.archived);
+  const list = el("div.bank-bullets");
+  for (const b of visible) list.append(renderLetterBlock(b));
+  Sortable.create(list, {
+    handle: ".drag", animation: 150,
+    onEnd: () => run(async () => {
+      const shown = [...list.children].map((n) => Number(n.dataset.id));
+      const hidden = all.filter((b) => !shown.includes(b.id)).map((b) => b.id);
+      await POST("/api/letter-blocks/reorder", { ids: [...shown, ...hidden] });
+      await refresh();
+    }),
+  });
+  const archivedCount = all.length - visible.length;
+  return el("div.card",
+    el("div.sec-card-head", el("h2", "Cover letter paragraphs"), el("span.grow"),
+      archivedCount ? el("span.muted.small", `(${archivedCount} archived hidden)`) : null),
+    el("div.muted.small", "Reusable paragraphs for the Cover Letter tab. Placeholders: {company} {role} {keyword1} {keyword2} {keywords}. ",
+      "Tags (comma-separated) mark a paragraph as \"fits posting\" when a posting mentions one. Leave a blank line to split into two paragraphs."),
+    all.length ? list : el("div.muted.small", { style: { margin: "8px 0" } }, "No paragraphs yet."),
+    el("div.row", { style: { marginTop: "8px" } },
+      el("button.btn.small", { type: "button", on: { click: () => run(async () => {
+        const { id } = await POST("/api/letter-blocks", { label: "New paragraph", text: "" });
+        await reload();
+        document.querySelector(`.letter-bul[data-id="${id}"] textarea`)?.focus();
+      }) } }, "+ Add paragraph"),
+      all.length ? null : el("button.btn.small", { type: "button", on: { click: () => run(async () => {
+        await POST("/api/letter-blocks/starter");
+        await reload();
+      }, "Added three example paragraphs") } }, "Add starter paragraphs")));
+}
+
+function renderLetterBlock(b) {
+  const save = (field) => (v) => PUT(`/api/letter-blocks/${b.id}`, { [field]: v.trim() }).then(() => refresh());
+  const label = liveInput(b.label, save("label"), { placeholder: "Name (only you see it)", "aria-label": "Paragraph name",
+    style: { fontWeight: "600", flex: "1", minWidth: "160px" } });
+  const tags = liveInput(b.tags, save("tags"), { placeholder: "Tags, e.g. incident response, SIEM", "aria-label": "Tags",
+    style: { flex: "1", minWidth: "160px" } });
+  const ta = el("textarea", { rows: 3, value: b.text, placeholder: "Paragraph text. Use {company}, {role}, {keyword1}, {keywords}." });
+  ta.addEventListener("change", () => run(() => save("text")(ta.value), "Saved"));
+  return el("div.bank-bul.letter-bul", { dataset: { id: b.id }, class: b.archived ? "archived" : "" },
+    el("span.drag", { title: "Drag to reorder" }, "⋮⋮"),
+    el("div", el("div.meta.letter-meta", label, tags), ta),
+    el("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" } },
+      el("button.btn.ghost.small", { type: "button", title: b.archived ? "Show in the Cover Letter tab again" : "Hide from the Cover Letter tab but keep it here",
+        on: { click: () => run(async () => { await PUT(`/api/letter-blocks/${b.id}`, { archived: !b.archived }); await reload(); }, b.archived ? "Restored" : "Archived") } },
+        b.archived ? "Restore" : "Archive"),
+      el("button.btn.ghost.small.danger", { type: "button", on: { click: async () => {
+        const used = lettersUsing(b.id);
+        const where = used.length ? `Used in: ${used.join(", ")}. It will be removed from them.` : "Not used in any saved letter.";
+        if (await confirmDialog(`Delete "${b.label || "this paragraph"}"?`, `${where} Archive it instead if you might want it later.`))
+          run(async () => { await DEL(`/api/letter-blocks/${b.id}`); await reload(); }, "Paragraph deleted");
+      } } }, "Delete")));
+}
+
 // ---------- page ----------
 
 async function addSection() {
@@ -303,7 +365,7 @@ async function addSection() {
         el("button.btn.primary", { type: "submit" }, "Add")));
     form.addEventListener("submit", () => title.value.trim() && close({ title: title.value.trim(), kind: kind.value }));
   });
-  if (res) run(async () => { await POST("/api/sections", res); await reload(); }, "Section added. Turn it on in the Builder.");
+  if (res) run(async () => { await POST("/api/sections", res); await reload(); }, "Section added. Turn it on in the Resume tab.");
 }
 
 function render() {
@@ -319,12 +381,13 @@ function render() {
   root.replaceChildren(el("div.content",
     el("div.row",
       el("div.grow", el("h2", "Content bank"),
-        el("div.muted.small", "Everything you add here is available to every resume. Pick and order it per resume in the Builder.")),
+        el("div.muted.small", "Everything you add here is available to every resume and cover letter. Pick and order it per resume in the Resume tab, and per letter in the Cover Letter tab.")),
       el("label.check.small", el("input", { type: "checkbox", checked: showArchived, on: { change: (e) => { showArchived = e.target.checked; render(); } } }), "Show archived"),
       el("button.btn", { type: "button", on: { click: async () => { if (await importDialog({ replacing: true })) location.reload(); } } }, "Import .tex"),
       el("button.btn", { type: "button", on: { click: addSection } }, "+ Add section")),
     renderProfile(),
-    secs));
+    secs,
+    renderLetterBlocks()));
 }
 
 export function init(node) { root = node; }

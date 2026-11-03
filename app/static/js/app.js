@@ -1,11 +1,12 @@
-import { GET, fail, setMaxChars } from "./util.js";
+import { GET, fail } from "./util.js";
 import * as builder from "./builder.js";
 import * as content from "./content.js";
 import * as jobs from "./jobs.js";
+import * as letters from "./letters.js";
 import * as setup from "./setup.js";
 
-/** Shared app state: the content bank and saved resume presets. */
-export const store = { bank: null, resumes: [], statuses: [], entryKinds: [], empty: false };
+/** Shared app state: the content bank, saved resume presets, cover letter paragraphs and saved letters. */
+export const store = { bank: null, resumes: [], statuses: [], entryKinds: [], letterBlocks: [], letters: [], empty: false };
 
 const listeners = new Set();
 export const onBankChange = (fn) => listeners.add(fn);
@@ -16,8 +17,9 @@ export async function refresh({ notify = true } = {}) {
   store.resumes = s.resumes;
   store.statuses = s.statuses;
   store.entryKinds = s.entry_kinds;
+  store.letterBlocks = s.letter_blocks;
+  store.letters = s.letters;
   store.empty = s.empty;
-  setMaxChars(s.settings?.max_bullet_chars);
   if (notify) listeners.forEach((fn) => fn());
 }
 
@@ -37,7 +39,7 @@ export function presetsUsing(kind, id) {
   )).map((r) => r.name);
 }
 
-const tabs = { builder, content, jobs };
+const tabs = { builder, letters, content, jobs };
 let current = null;
 
 function show() {
@@ -67,6 +69,7 @@ async function main() {
     return;
   }
   builder.init(document.getElementById("tab-builder"));
+  letters.init(document.getElementById("tab-letters"));
   content.init(document.getElementById("tab-content"));
   jobs.init(document.getElementById("tab-jobs"));
   window.addEventListener("hashchange", show);

@@ -1,5 +1,4 @@
 """SQLite storage. One file in DATA_DIR; schema versioned with PRAGMA user_version."""
-import fcntl
 import json
 import os
 import sqlite3
@@ -11,6 +10,17 @@ DB_PATH = DATA_DIR / "app.db"
 SENT_DIR = DATA_DIR / "sent"
 
 _local = threading.local()
+
+try:  # Linux / macOS / Docker
+    import fcntl
+
+    def _lock(f):
+        fcntl.flock(f, fcntl.LOCK_EX)
+except ImportError:  # Windows: fcntl doesn't exist there
+    import msvcrt
+
+    def _lock(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)  # released when the file is closed
 
 STATUSES = [
     "not_applied",
@@ -130,6 +140,27 @@ SCHEMA = [
     ALTER TABLE job_events ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';   -- manual | email
     ALTER TABLE job_events ADD COLUMN mail_id INTEGER REFERENCES mail_messages(id) ON DELETE SET NULL;
     """,
+    # v3: cover letters (paragraph bank, saved letters, which jobs got one)
+    """
+    CREATE TABLE letter_blocks (
+        id INTEGER PRIMARY KEY,
+        label TEXT NOT NULL DEFAULT '',           -- short name shown in the list, e.g. "SOC internship story"
+        text TEXT NOT NULL DEFAULT '',            -- may hold {company} {role} {keyword1} {keywords} placeholders
+        tags TEXT NOT NULL DEFAULT '',            -- comma-separated keywords; matching a posting suggests the paragraph
+        archived INTEGER NOT NULL DEFAULT 0,
+        sort INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE letters (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        format TEXT NOT NULL DEFAULT 'pdf',
+        config TEXT NOT NULL DEFAULT '{}',        -- see app/resolve_letter.py
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    ALTER TABLE jobs ADD COLUMN cover_letter INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE jobs ADD COLUMN letter_file TEXT NOT NULL DEFAULT '';
+    ALTER TABLE jobs ADD COLUMN letter_name TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 
@@ -156,7 +187,7 @@ def migrate():
     conn = connect()
     # gunicorn workers start together; the lock keeps two of them from running the same upgrade
     with open(DATA_DIR / ".migrate.lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        _lock(lock)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         for i, script in enumerate(SCHEMA[version:], start=version + 1):
             conn.executescript(script)
@@ -225,6 +256,20 @@ def bank():
 
 def resumes():
     out = rows("SELECT * FROM resumes ORDER BY name COLLATE NOCASE")
+    for r in out:
+        r["config"] = json.loads(r["config"])
+    return out
+
+
+def letter_blocks():
+    out = rows("SELECT * FROM letter_blocks ORDER BY sort, id")
+    for b in out:
+        b["archived"] = bool(b["archived"])
+    return out
+
+
+def letters():
+    out = rows("SELECT * FROM letters ORDER BY name COLLATE NOCASE")
     for r in out:
         r["config"] = json.loads(r["config"])
     return out

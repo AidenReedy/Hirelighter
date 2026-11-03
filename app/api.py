@@ -7,20 +7,18 @@ import sqlite3
 import uuid
 import zipfile
 from datetime import date, datetime
+from pathlib import Path
 
 from flask import Blueprint, Response, abort, jsonify, request, send_file
 
-from . import db, mailmatch, sankey, seed
+from . import db, keywords, mailmatch, sankey, seed
 from .import_tex import TexImportError
-from .render_docx import render_docx
-from .render_latex import LatexError, compile_pdf, page_count, render_tex
+from .render_docx import render_docx, render_letter_docx
+from .render_latex import LatexError, compile_pdf, page_count, render_letter_tex, render_tex
 from .resolve import resolve
+from .resolve_letter import resolve_letter
 
 bp = Blueprint("api", __name__, url_prefix="/api")
-
-# Longest bullet that still fits on one line in the default template (letter, 11pt, 0.5in margins).
-MAX_BULLET_CHARS = int(os.environ.get("MAX_BULLET_CHARS", "107"))
-
 
 def body():
     return request.get_json(silent=True) or {}
@@ -62,7 +60,7 @@ def json_error(e):
 @bp.get("/state")
 def state():
     return jsonify(bank=db.bank(), resumes=db.resumes(), statuses=db.STATUSES, entry_kinds=db.ENTRY_KINDS,
-                   settings={"max_bullet_chars": MAX_BULLET_CHARS}, empty=seed.is_empty())
+                   letter_blocks=db.letter_blocks(), letters=db.letters(), empty=seed.is_empty())
 
 
 # ---------- setup / import ----------
@@ -307,13 +305,13 @@ def reorder_skills():
 
 # ---------- resumes (presets) ----------
 
-def _check_name(name, rid=None):
+def _check_name(name, rid=None, table="resumes"):
     name = (name or "").strip()
     if not name:
         abort(400, "name required")
-    clash = db.row("SELECT id FROM resumes WHERE name = ? COLLATE NOCASE", (name,))
+    clash = db.row(f"SELECT id FROM {table} WHERE name = ? COLLATE NOCASE", (name,))
     if clash and clash["id"] != rid:
-        abort(409, f"a resume named '{name}' already exists")
+        abort(409, f"a {'letter' if table == 'letters' else 'resume'} named '{name}' already exists")
     return name
 
 
@@ -351,43 +349,177 @@ def del_resume(rid):
 
 # ---------- rendering ----------
 
+def name_slug():
+    """The profile name as FirstLast: "Aiden Reedy" -> "AidenReedy"."""
+    words = re.findall(r"[A-Za-z0-9]+", db.bank()["profile"].get("name") or "")
+    return "".join(w[0].upper() + w[1:] for w in words)
+
+
 def resume_filename(ext):
-    """Every resume downloads as First_Last.<ext>, whatever the preset is called."""
-    return safe_filename(db.bank()["profile"].get("name") or "Resume") + ext
+    """Every resume downloads as FirstLast.<ext>, whatever the preset is called."""
+    return (name_slug() or "Resume") + ext
 
 
-def safe_filename(*parts):
-    return "_".join(re.sub(r"[^A-Za-z0-9.-]+", "_", p).strip("_") for p in parts if p)
+def letter_filename(ext):
+    """Cover letters download as FirstLastCoverLetter.<ext>."""
+    return name_slug() + "CoverLetter" + ext
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _send_render(doc, fmt, to_tex, to_docx, filename):
+    """One document as PDF (default), Word or LaTeX source, named by filename(ext)."""
+    if fmt == "docx":
+        resp = Response(to_docx(doc), mimetype=DOCX_MIME)
+        resp.headers["X-Filename"] = filename(".docx")
+        return resp
+    if fmt == "tex":
+        resp = Response(to_tex(doc), mimetype="application/x-tex")
+        resp.headers["X-Filename"] = filename(".tex")
+        return resp
+    try:
+        pdf = compile_pdf(to_tex(doc))
+    except LatexError as e:
+        return jsonify(error=str(e), log=e.log), 422
+    resp = Response(pdf, mimetype="application/pdf")
+    resp.headers["X-Filename"] = filename(".pdf")
+    resp.headers["X-Page-Count"] = str(page_count(pdf))
+    return resp
 
 
 @bp.post("/render")
 def render():
     d = body()
-    fmt = d.get("format", "pdf")
     doc = resolve(db.bank(), d.get("config", {}))
-    if fmt == "docx":
-        data = render_docx(doc)
-        resp = Response(data, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        resp.headers["X-Filename"] = resume_filename(".docx")
-        return resp
-    if fmt == "tex":
-        resp = Response(render_tex(doc), mimetype="application/x-tex")
-        resp.headers["X-Filename"] = resume_filename(".tex")
-        return resp
-    try:
-        pdf = compile_pdf(render_tex(doc))
-    except LatexError as e:
-        return jsonify(error=str(e), log=e.log), 422
-    resp = Response(pdf, mimetype="application/pdf")
-    resp.headers["X-Filename"] = resume_filename(".pdf")
-    resp.headers["X-Page-Count"] = str(page_count(pdf))
+    return _send_render(doc, d.get("format", "pdf"), render_tex, render_docx, resume_filename)
+
+
+# ---------- cover letters ----------
+
+LETTER_BLOCK_FIELDS = ["label", "text", "tags", "archived"]
+
+STARTER_BLOCKS = [
+    ("Opener", "I'm applying for the {role} position at {company}. My background in {keywords} lines up closely with "
+               "what your team is looking for, and I'd welcome the chance to contribute.", ""),
+    ("Experience", "In my most recent role, I [what you did, ideally with a number]. That work gave me hands-on "
+                   "experience with {keyword1}, and it's the kind of work I want to keep doing at {company}.", ""),
+    ("Closing", "Thank you for your time and consideration. My resume is attached, and I'd be glad to talk about "
+                "how I can contribute to {company}.", ""),
+]
+
+
+@bp.post("/letter-blocks")
+def add_letter_block():
+    d = body()
+    cur = db.execute("INSERT INTO letter_blocks (label, text, tags, sort) VALUES (?, ?, ?, ?)",
+                     (d.get("label", ""), d.get("text", ""), d.get("tags", ""), db.next_sort("letter_blocks")))
+    return jsonify(id=cur.lastrowid), 201
+
+
+@bp.post("/letter-blocks/starter")
+def add_starter_blocks():
+    if db.row("SELECT id FROM letter_blocks LIMIT 1"):
+        abort(409, "You already have paragraphs.")
+    for i, (label, text, tags) in enumerate(STARTER_BLOCKS):
+        db.execute("INSERT INTO letter_blocks (label, text, tags, sort) VALUES (?, ?, ?, ?)", (label, text, tags, i))
+    return jsonify(ok=True), 201
+
+
+@bp.put("/letter-blocks/<int:bid>")
+def put_letter_block(bid):
+    d = body()
+    if "archived" in d:
+        d["archived"] = 1 if d["archived"] else 0
+    update_row("letter_blocks", bid, d, LETTER_BLOCK_FIELDS)
+    return jsonify(ok=True)
+
+
+@bp.delete("/letter-blocks/<int:bid>")
+def del_letter_block(bid):
+    db.execute("DELETE FROM letter_blocks WHERE id = ?", (bid,))
+    for r in db.letters():  # saved letters drop the deleted paragraph
+        cfg = r["config"]
+        cfg["blocks"] = [b for b in cfg.get("blocks", []) if b.get("id") != bid]
+        db.execute("UPDATE letters SET config = ? WHERE id = ?", (json.dumps(cfg), r["id"]))
+    return jsonify(ok=True)
+
+
+@bp.post("/letter-blocks/reorder")
+def reorder_letter_blocks():
+    reorder("letter_blocks", body().get("ids", []))
+    return jsonify(ok=True)
+
+
+@bp.post("/letters")
+def add_letter():
+    d = body()
+    name = _check_name(d.get("name"), table="letters")
+    fmt = d.get("format") if d.get("format") in ("pdf", "docx") else "pdf"
+    cur = db.execute("INSERT INTO letters (name, format, config) VALUES (?, ?, ?)",
+                     (name, fmt, json.dumps(d.get("config", {}))))
+    return jsonify(id=cur.lastrowid), 201
+
+
+@bp.put("/letters/<int:lid>")
+def put_letter(lid):
+    d = body()
+    vals = {}
+    if "name" in d:
+        vals["name"] = _check_name(d["name"], lid, table="letters")
+    if d.get("format") in ("pdf", "docx"):
+        vals["format"] = d["format"]
+    if "config" in d:
+        vals["config"] = json.dumps(d["config"])
+    if vals:
+        update_row("letters", lid, vals, list(vals))
+        db.execute("UPDATE letters SET updated_at = datetime('now') WHERE id = ?", (lid,))
+    return jsonify(ok=True)
+
+
+@bp.delete("/letters/<int:lid>")
+def del_letter(lid):
+    db.execute("DELETE FROM letters WHERE id = ?", (lid,))
+    return jsonify(ok=True)
+
+
+def _bank_text():
+    """Everything the user has written, for deciding which posting keywords they actually have."""
+    bank = db.bank()
+    parts = []
+    for s in bank["sections"]:
+        for e in s["entries"]:
+            parts += [e["title"], e["org"], e["tech"]] + [b["text"] for b in e["bullets"] if not b["archived"]]
+        for g in s["groups"]:
+            parts += [k["name"] for k in g["skills"]]
+    parts += [b["text"] + "\n" + b["tags"] for b in db.letter_blocks() if not b["archived"]]
+    return "\n".join(p for p in parts if p)
+
+
+def _bank_skills():
+    return [k["name"] for s in db.bank()["sections"] for g in s["groups"] for k in g["skills"]]
+
+
+@bp.post("/letters/keywords")
+def letter_keywords():
+    posting = body().get("posting", "")
+    return jsonify(keywords.analyze(posting, _bank_skills(), _bank_text(), db.letter_blocks()))
+
+
+@bp.post("/render-letter")
+def render_letter():
+    d = body()
+    doc, unfilled = resolve_letter(db.bank()["profile"], db.letter_blocks(), d.get("config", {}))
+    resp = _send_render(doc, d.get("format", "pdf"), render_letter_tex, render_letter_docx, letter_filename)
+    if isinstance(resp, Response):
+        resp.headers["X-Unfilled"] = ",".join(unfilled)
     return resp
 
 
 # ---------- jobs ----------
 
 JOB_FIELDS = ["company", "role", "url", "status", "applied_date", "interview_count", "notes", "resume_id", "resume_name",
-              "expect_from"]
+              "expect_from", "cover_letter"]
 
 
 def _normalize_job(d, current=None):
@@ -400,6 +532,8 @@ def _normalize_job(d, current=None):
         abort(400, "bad status")
     if "interview_count" in d:
         d["interview_count"] = max(0, int(d["interview_count"] or 0))
+    if "cover_letter" in d:
+        d["cover_letter"] = 1 if d["cover_letter"] else 0
     status = d.get("status", current["status"] if current else "applied")
     count = d.get("interview_count", current["interview_count"] if current else 0)
     if status == "interviewing" and count == 0:
@@ -455,10 +589,11 @@ def put_job(jid):
 
 @bp.delete("/jobs/<int:jid>")
 def del_job(jid):
-    j = db.row("SELECT resume_file FROM jobs WHERE id = ?", (jid,))
+    j = db.row("SELECT resume_file, letter_file FROM jobs WHERE id = ?", (jid,))
     db.execute("DELETE FROM jobs WHERE id = ?", (jid,))
-    if j and j["resume_file"]:
-        (db.SENT_DIR / j["resume_file"]).unlink(missing_ok=True)
+    for f in (j["resume_file"], j["letter_file"]) if j else ():
+        if f:
+            (db.SENT_DIR / f).unlink(missing_ok=True)
     return jsonify(ok=True)
 
 
@@ -476,6 +611,32 @@ def job_resume(jid):
     if not path.exists():
         abort(404, "file missing")
     return send_file(path, as_attachment=request.args.get("dl") == "1", download_name=resume_filename(path.suffix))
+
+
+@bp.post("/jobs/<int:jid>/letter")
+def attach_letter(jid):
+    """Keep the exact cover letter sent for this job and tick its Cover letter box. Replaces an earlier one."""
+    j = db.row("SELECT * FROM jobs WHERE id = ?", (jid,)) or abort(404)
+    upload = request.files.get("letter") or abort(400, "attach the letter file")
+    ext = {".docx": ".docx", ".tex": ".tex"}.get(Path(upload.filename or "").suffix.lower(), ".pdf")
+    fname = f"{jid}-letter-{uuid.uuid4().hex[:8]}{ext}"
+    upload.save(db.SENT_DIR / fname)
+    if j["letter_file"]:
+        (db.SENT_DIR / j["letter_file"]).unlink(missing_ok=True)
+    db.execute("UPDATE jobs SET cover_letter = 1, letter_file = ?, letter_name = ?, updated_at = datetime('now') "
+               "WHERE id = ?", (fname, request.form.get("letter_name", ""), jid))
+    return jsonify(db.row("SELECT * FROM jobs WHERE id = ?", (jid,)))
+
+
+@bp.get("/jobs/<int:jid>/letter")
+def job_letter(jid):
+    j = db.row("SELECT * FROM jobs WHERE id = ?", (jid,)) or abort(404)
+    if not j["letter_file"]:
+        abort(404, "no cover letter saved for this job")
+    path = db.SENT_DIR / j["letter_file"]
+    if not path.exists():
+        abort(404, "file missing")
+    return send_file(path, as_attachment=request.args.get("dl") == "1", download_name=letter_filename(path.suffix))
 
 
 @bp.get("/sankey")

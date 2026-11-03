@@ -62,14 +62,6 @@ export function fail(e) {
   toast(e.message || String(e), "error");
 }
 
-/** Visible length on the page: **bold** markers dropped, -- counts as one dash. */
-export function visibleLen(s) {
-  return (s || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/--/g, "–").length;
-}
-
-export let MAX_CHARS = 107;
-export const setMaxChars = (n) => { if (n > 0) MAX_CHARS = n; };
-
 /**
  * Open the shared <dialog>. `build(form, close)` fills it; resolves with whatever close(value) gets.
  * Esc / backdrop resolve null.

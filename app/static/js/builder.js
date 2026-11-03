@@ -1,12 +1,11 @@
-// Builder tab: choose and order content per resume preset, live preview, download.
+// Resume tab (internally "builder"): choose and order content per resume preset, live preview, download.
 import { store, refresh, find, onBankChange } from "./app.js";
 import {
-  el, POST, PUT, DEL, fail, toast, visibleLen, MAX_CHARS,
+  el, POST, PUT, DEL, fail, toast,
   promptDialog, confirmDialog, debounce, saveBlob, lsGet, lsSet,
 } from "./util.js";
 import { openJobDialog } from "./jobs.js";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdf.worker.min.js";
+import { renderDoc, fetchFile } from "./preview.js";
 
 let root, treeEl, hintsEl, previewEl, pagePill, presetSel, dirtyEl, formatSel;
 let presetId = null;   // saved preset being edited (null = unsaved)
@@ -224,47 +223,18 @@ async function addBullet(e, list) {
 // ---------- hints ----------
 
 function renderHints() {
-  const hints = [];
-  for (const s of work) {
-    const sec = find.section(s.id);
-    if (!s.on || sec.kind === "skills") continue;
-    const kinds = new Set(sec.entries.map((e) => e.kind));
-    if (kinds.has("job")) {
-      const off = s.entries.filter((e) => !e.on && find.entry(e.id).kind === "job");
-      if (off.length) hints.push([`${off.length} job${off.length > 1 ? "s" : ""} hidden in ${sec.title}. Keep every job to avoid gaps.`]);
-    }
-    if (kinds.has("project")) {
-      const n = s.entries.filter((e) => e.on).length;
-      if (n !== 2) hints.push([`${n} projects selected. Two that fit the role usually work best.`]);
-    }
-  }
-  const over = [];
-  for (const s of work) for (const e of s.entries) for (const b of e.bullets) {
-    if (b.on && s.on && e.on && visibleLen(find.bullet(b.id).text) > MAX_CHARS) over.push(b);
-  }
-  if (over.length) hints.push([`${over.length} selected bullet${over.length > 1 ? "s are" : " is"} too long to fit on one line.`]);
-  if (lastPageCount > 1) hints.push([`The PDF is ${lastPageCount} pages. Cut something to get back to one.`]);
-  hintsEl.replaceChildren(...(hints.length
-    ? hints.map(([t]) => el("div.hint", t))
-    : [el("div.hint.ok", "Looks good: one page, every line under the limit.")]));
-  if (format !== "pdf" && !hints.length) hintsEl.firstChild.textContent = "No issues found.";
+  // Only one warning: a resume that spills onto a second page.
+  const over = format === "pdf" && lastPageCount > 1;
+  hintsEl.hidden = !over;
+  if (over) hintsEl.replaceChildren(el("div.hint", `The PDF is ${lastPageCount} pages. Cut something to get back to one.`));
 }
 
 // ---------- preview ----------
 
 const schedulePreview = debounce(renderPreview, 900);
 
-async function fetchRender(fmt, signal) {
-  const res = await fetch("/api/render", {
-    method: "POST", signal, headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config: toConfig(), format: fmt, name: presetName() }),
-  });
-  if (!res.ok) {
-    let msg = res.statusText, log = "";
-    try { const j = await res.json(); msg = j.error || msg; log = j.log || ""; } catch { /* not json */ }
-    const err = new Error(msg); err.log = log; throw err;
-  }
-  return { blob: await res.blob(), filename: res.headers.get("X-Filename") || `resume.${fmt}`, pages: res.headers.get("X-Page-Count") };
+function fetchRender(fmt, signal) {
+  return fetchFile("/api/render", { config: toConfig(), format: fmt, name: presetName() }, `resume.${fmt}`, signal);
 }
 
 async function renderPreview() {
@@ -273,83 +243,25 @@ async function renderPreview() {
   previewAbort = ctrl;
   setPill("Rendering…");
   const pfmt = format === "docx" ? "docx" : "pdf";
-  // attached off-screen so docx-preview can measure text for tab stops
-  const stage = el("div", { style: { position: "absolute", left: "-10000px", top: "0", width: "1000px" } });
   try {
     const { blob, pages } = await fetchRender(pfmt, ctrl.signal);
     if (ctrl.signal.aborted) return;
-    document.body.append(stage);
-    let pill;
+    const n = await renderDoc(previewEl, blob, pfmt, () => ctrl.signal.aborted);
+    if (n === undefined) return;
     if (pfmt === "pdf") {
-      const pdf = await pdfjsLib.getDocument({ data: await blob.arrayBuffer(), isEvalSupported: false }).promise;
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const vp = page.getViewport({ scale: 2 });
-        const canvas = el("canvas", { width: vp.width, height: vp.height });
-        await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-        stage.append(canvas);
-      }
-      lastPageCount = Number(pages) || pdf.numPages;
-      pill = [lastPageCount === 1 ? "1 page" : `${lastPageCount} pages`, lastPageCount === 1 ? "good" : "bad"];
+      lastPageCount = Number(pages) || n;
+      setPill(lastPageCount === 1 ? "1 page" : `${lastPageCount} pages`, lastPageCount === 1 ? "good" : "bad");
     } else {
-      await docx.renderAsync(blob, stage, null, { inWrapper: true, ignoreLastRenderedPageBreak: true, breakPages: true, experimental: true });
-      alignTabs(stage); // experimental marks tabs as .docx-tab-stop; we then lay them out ourselves
       lastPageCount = null;
-      pill = ["Word preview, approximate layout"];
+      setPill("Word preview, approximate layout");
     }
-    if (ctrl.signal.aborted) return;
-    previewEl.replaceChildren(...stage.childNodes);
-    setPill(...pill);
-    fitDocx();
     renderHints();
   } catch (err) {
     if (err.name === "AbortError" || ctrl.signal.aborted) return;
     setPill("Error", "bad");
     previewEl.replaceChildren(el("div.err", err.message + (err.log ? "\n\n" + err.log : "")));
-  } finally {
-    stage.remove();
   }
 }
-
-/**
- * Our .docx only uses one right-aligned tab per line (title<TAB>date). docx-preview doesn't lay those out
- * reliably, so split each such paragraph into left/right halves.
- */
-function alignTabs(rootEl) {
-  for (const tab of rootEl.querySelectorAll(".docx-tab-stop")) {
-    const p = tab.closest("p");
-    if (!p || !p.firstChild) continue;
-    const after = document.createRange();
-    after.setStartAfter(tab);
-    after.setEndAfter(p.lastChild);
-    const right = el("span", after.extractContents());
-    const before = document.createRange();
-    before.setStartBefore(p.firstChild);
-    before.setEndBefore(tab);
-    const left = el("span", before.extractContents());
-    p.replaceChildren(left, right);
-    Object.assign(p.style, { display: "flex", justifyContent: "space-between", gap: "12px" });
-  }
-}
-
-/** Word pages render at true size (so tab stops work); scale them to fit the pane. */
-function fitDocx() {
-  // transform (not zoom) so text isn't re-laid out and lines don't re-wrap
-  const wrap = previewEl.querySelector(".docx-wrapper");
-  if (!wrap) return;
-  let holder = wrap.parentElement;
-  if (!holder.classList.contains("docx-holder")) {
-    holder = el("div.docx-holder", { style: { overflow: "hidden" } });
-    wrap.replaceWith(holder);
-    holder.append(wrap);
-  }
-  Object.assign(wrap.style, { transform: "none", transformOrigin: "0 0", width: "max-content" });
-  const avail = previewEl.clientWidth - 24;
-  const scale = Math.min(1, avail / wrap.offsetWidth);
-  wrap.style.transform = `scale(${scale})`;
-  holder.style.height = wrap.offsetHeight * scale + "px";
-}
-window.addEventListener("resize", debounce(fitDocx, 150));
 
 function setPill(text, kind = "") {
   pagePill.textContent = text;
@@ -457,7 +369,7 @@ export function init(node) {
   formatSel = el("select", { "aria-label": "Format", on: { change: () => { format = formatSel.value; changed(); } } },
     Object.entries(FORMATS).map(([v, l]) => el("option", { value: v }, l)));
   treeEl = el("div.tree", { style: { display: "flex", flexDirection: "column", gap: "12px" } });
-  hintsEl = el("div.card.hints");
+  hintsEl = el("div.card.hints", { hidden: true });
   previewEl = el("div.preview", el("div.loading", "Loading preview…"));
   pagePill = el("span.status-pill", "…");
   const dlBtn = el("button.btn.primary", { type: "button" }, "Download");
